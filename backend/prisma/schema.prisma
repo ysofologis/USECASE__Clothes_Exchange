@@ -1,0 +1,310 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../node_modules/@prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum Condition {
+  NEW
+  LIKE_NEW
+  GOOD
+  FAIR
+  POOR
+}
+
+enum ListingType {
+  SWAP
+  SELL
+  BOTH
+}
+
+enum ItemCategory {
+  TOPS
+  BOTTOMS
+  DRESSES
+  OUTERWEAR
+  SHOES
+  ACCESSORIES
+  BAGS
+  SPORTS
+  CHILDREN
+  OTHER
+}
+
+enum Season {
+  SPRING
+  SUMMER
+  AUTUMN
+  WINTER
+  ALL_SEASONS
+}
+
+enum Gender {
+  MEN
+  WOMEN
+  UNISEX
+  CHILDREN
+}
+
+enum ListingStatus {
+  ACTIVE
+  SOLD
+  ARCHIVED
+}
+
+enum SwapStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  COMPLETED
+  CANCELLED
+}
+
+enum NotificationType {
+  SWAP_PROPOSAL
+  SWAP_UPDATE
+  MESSAGE
+  REVIEW
+  SYSTEM
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  SYSTEM
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  firstName String
+  lastName  String
+  avatar    String?
+  role      UserRole @default(USER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items         Item[] @relation("OwnerItems")
+  savedItems    SavedItem[]
+  conversations ConversationParticipant[]
+  messages      Message[]
+  notifications Notification[]
+  swapProposalsAsSender SwapProposal[] @relation("SwapProposalsSender")
+  swapProposalsAsReceiver SwapProposal[] @relation("SwapProposalsReceiver")
+  reviewsGiven  Review[] @relation("ReviewsGiven")
+  reviewsReceived Review[] @relation("ReviewsReceived")
+  meetupOrganizer Meetup[] @relation("MeetupOrganizer")
+  meetupAttendees MeetupAttendee[]
+  refreshTokens RefreshToken[]
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Item {
+  id          String   @id @default(cuid())
+  name        String
+  description String
+  category    ItemCategory
+  season      Season
+  gender      Gender
+  size        String
+  condition   Condition
+  images      String[]
+  ownerId     String
+  owner       User     @relation("OwnerItems", fields: [ownerId], references: [id])
+  listings    Listing[]
+  swapProposalItems SwapProposalItem[]
+  swapItems   SwapItem[]
+  savedBy     SavedItem[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([ownerId])
+}
+
+model Listing {
+  id          String        @id @default(cuid())
+  itemId      String
+  item        Item          @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  listingType ListingType
+  status      ListingStatus @default(ACTIVE)
+  price       Int?          // in cents, optional
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([itemId])
+  @@index([status])
+}
+
+model SwapProposal {
+  id          String      @id @default(cuid())
+  senderId    String
+  sender      User        @relation("SwapProposalsSender", fields: [senderId], references: [id])
+  receiverId  String
+  receiver    User        @relation("SwapProposalsReceiver", fields: [receiverId], references: [id])
+  status      SwapStatus  @default(PENDING)
+  message     String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  items       SwapProposalItem[]
+  swap        Swap?
+
+  @@index([senderId])
+  @@index([receiverId])
+  @@index([status])
+}
+
+model SwapProposalItem {
+  id             String       @id @default(cuid())
+  swapProposalId String
+  swapProposal   SwapProposal @relation(fields: [swapProposalId], references: [id], onDelete: Cascade)
+  itemId         String
+  item           Item         @relation(fields: [itemId], references: [id])
+  role           String       // "offered" or "requested"
+
+  @@unique([swapProposalId, itemId])
+  @@index([role])
+}
+
+model Swap {
+  id          String      @id @default(cuid())
+  proposalId  String      @unique
+  swapProposal SwapProposal @relation(fields: [proposalId], references: [id])
+  status      SwapStatus  @default(PENDING)
+  scheduledAt DateTime?
+  location    String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  swapItems   SwapItem[]
+  reviews     Review[]
+
+  @@index([proposalId])
+}
+
+model SwapItem {
+  id     String @id @default(cuid())
+  swapId String
+  swap   Swap   @relation(fields: [swapId], references: [id], onDelete: Cascade)
+  itemId String
+  item   Item   @relation(fields: [itemId], references: [id])
+
+  @@unique([swapId, itemId])
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  reviewerId String
+  reviewer  User     @relation("ReviewsGiven", fields: [reviewerId], references: [id])
+  revieweeId String
+  reviewee  User     @relation("ReviewsReceived", fields: [revieweeId], references: [id])
+  swapId    String?
+  swap      Swap?    @relation(fields: [swapId], references: [id])
+  rating    Int
+  comment   String?
+  createdAt DateTime @default(now())
+
+  @@index([reviewerId])
+  @@index([revieweeId])
+  @@index([swapId])
+}
+
+model Conversation {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  participants ConversationParticipant[]
+  messages     Message[]
+}
+
+model ConversationParticipant {
+  id             String       @id @default(cuid())
+  userId         String
+  user           User         @relation(fields: [userId], references: [id])
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  lastReadAt     DateTime     @default(now())
+
+  @@unique([userId, conversationId])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  content        String
+  type           MessageType  @default(TEXT)
+  senderId       String
+  sender         User         @relation(fields: [senderId], references: [id])
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId])
+}
+
+model Notification {
+  id          String            @id @default(cuid())
+  userId      String
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        NotificationType
+  title       String
+  message     String
+  read        Boolean           @default(false)
+  createdAt   DateTime          @default(now())
+
+  @@index([userId])
+  @@index([read])
+}
+
+model SavedItem {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  itemId String
+  item   Item  @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, itemId])
+  @@index([userId])
+}
+
+model Meetup {
+  id          String   @id @default(cuid())
+  title       String
+  description String
+  location    String
+  date        DateTime
+  organizerId String
+  organizer   User     @relation("MeetupOrganizer", fields: [organizerId], references: [id])
+  createdAt   DateTime @default(now())
+
+  attendees MeetupAttendee[]
+}
+
+model MeetupAttendee {
+  id       String @id @default(cuid())
+  meetupId String
+  meetup   Meetup @relation(fields: [meetupId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User   @relation(fields: [userId], references: [id])
+
+  @@unique([meetupId, userId])
+}
